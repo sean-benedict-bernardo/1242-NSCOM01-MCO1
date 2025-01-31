@@ -75,11 +75,12 @@ Submit the following by the deadline:
 
 **Additional Notes
 **
-  You may use any standard libraries or frameworks available in your chosen programming language (e.g., Python’s socket library, Java’s java.net package, or C’s sys/socket.h).
-  Ensure your program is platform-independent if using Python or Java.
-  Focus on writing clean, efficient, and well-documented code.
-  Up to two (2) students per group. Sign up for your group at the People tab.
-  Rubric:  NSCOM01_MP1_Rubric.xlsxDownload NSCOM01_MP1_Rubric.xlsx
+ 1) You may use any standard libraries or frameworks available in your chosen programming language (e.g., Python’s socket library, Java’s java.net package, or C’s sys/socket.h).
+ 2) Ensure your program is platform-independent if using Python or Java.
+ 3) Focus on writing clean, efficient, and well-documented code.
+ 4) Up to two (2) students per group. Sign up for your group at the People tab.
+  
+Rubric:  NSCOM01_MP1_Rubric.xlsxDownload NSCOM01_MP1_Rubric.xlsx
 
 **Submission date: February  19, 2025 11:59PM via AnimoSpace
 **
