@@ -1,7 +1,6 @@
 # 1241-NSCOM01-MCO1
 
-**Project Specifications
-**
+**Project Specifications**
 
 Objectives:
  This project is designed to supplement classroom instruction and provide hands-on experience with network protocols. By completing this project, students will:
@@ -39,8 +38,8 @@ Provide test cases to demonstrate the implementation of these error-handling mec
  Block size negotiation (blksize): Allow the user to specify the transfer block size.
  Transfer size communication (tsize): Communicate the file size to the server during uploads.
  
-**Evaluation Criteria
-**
+**Evaluation Criteria**
+
 Your project will be evaluated based on the following criteria:
 
 1) Functionality:
@@ -61,6 +60,7 @@ Your project will be evaluated based on the following criteria:
   Clear instructions for building and running the program.
 
 **Deliverables**
+
 Submit the following by the deadline:
 
 1) Source Code:
@@ -72,8 +72,7 @@ Submit the following by the deadline:
    A description of the implemented features and error-handling mechanisms.
    Test cases and sample outputs demonstrating functionality.
 
-**Additional Notes
-**
+**Additional Notes**
  1) You may use any standard libraries or frameworks available in your chosen programming language (e.g., Python’s socket library, Java’s java.net package, or C’s sys/socket.h).
  2) Ensure your program is platform-independent if using Python or Java.
  3) Focus on writing clean, efficient, and well-documented code.
@@ -81,8 +80,6 @@ Submit the following by the deadline:
   
 Rubric:  NSCOM01_MP1_Rubric.xlsxDownload NSCOM01_MP1_Rubric.xlsx
 
-**Submission date: February  19, 2025 11:59PM via AnimoSpace
-**
+**Submission date: February  19, 2025 11:59PM via AnimoSpace**
 
-**Demonstration date: TBA by each instructor
-**
+**Demonstration date: TBA by each instructor**
