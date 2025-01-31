@@ -10,8 +10,7 @@ Objectives:
 Implement a working network application that adheres to Internet standards.
  
 Background:
- The Trivial File Transfer Protocol (TFTP) is a lightweight, UDP-based application layer protocol commonly used for transferring files within a  
-  Local Area Network (LAN). It is often employed to upload or download operating system images and configuration files to network appliances. Unlike TCP-based protocols, TFTP implements its own mechanisms for reliable and ordered data delivery.
+ The Trivial File Transfer Protocol (TFTP) is a lightweight, UDP-based application layer protocol commonly used for transferring files within a Local Area Network (LAN). It is often employed to upload or download operating system images and configuration files to network appliances. Unlike TCP-based protocols, TFTP implements its own mechanisms for reliable and ordered data delivery.
 
  The current version, TFTP v2, is defined in RFC 1350, with extensions for features like block size negotiation and transfer size communication documented in RFCs 2347, 2348, and 2349.
 
