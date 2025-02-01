@@ -1,0 +1,5 @@
+# Directories
+client
+__pycache__
+# specific files
+__*.py
