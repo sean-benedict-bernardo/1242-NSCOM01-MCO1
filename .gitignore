@@ -2,4 +2,7 @@
 client
 __pycache__
 # specific files
-__*.py
+# python files prefixed with __ are test files and are ignored
+__*.py 
+# All batch files are likewise ignored as 
+*.bat
