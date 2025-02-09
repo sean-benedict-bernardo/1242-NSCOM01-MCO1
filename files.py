@@ -1,5 +1,8 @@
 import os
 
+def fileExists(filename: str) -> bool:
+    """Checks if a file exists"""
+    return os.path.exists(f"client/{filename}")
 
 def makeFolder() -> None:
     """Creates a directory if it does not exist"""
@@ -43,9 +46,3 @@ def readFile(filename: str, numBytes: int = -1) -> bytes | list[dict[str, bytes]
 
     except FileNotFoundError as e:
         raise e
-
-
-# TODO: check if newlines are in LF or CRLF
-
-if __name__ == "__main__":
-    print(readFile("FileB.bin"))

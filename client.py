@@ -8,23 +8,18 @@ Bernardo, Sean Benedict G.
 """
 
 # Custom imports
-import files
-import misc
+import files, misc, codes
 
 # Python imports
-import socket
-
+import socket, sys
 
 IP, PORT = "127.0.0.1", 69
 CLIENTPORT = 51125  # u-i-i-a-u in lol
 
-# TODO: attach this to client class to allow for negotiation as per RFCs 2347, 2348, and 2349
-DATALENGTH = 512
-
 
 class Client:
-    def __init__(self):
-        self.destIP = self.setDestination()
+    def __init__(self, destIP: str = None):
+        self.destIP = self.setDestination() if destIP == None else destIP
         self.destReqPort = 69  # nice
         self.clientPort = CLIENTPORT
 
@@ -39,9 +34,11 @@ class Client:
     def loop(self):
         """Main loop for the client"""
         while True:
+            print("============ TFTPv2 Client ============")
+            print(f"Set Destination IP: {self.destIP}\n")
             userInput = int(
                 misc.getInput(
-                    "What would you like to do ",
+                    f"What would you like to do",
                     ["Download File", "Upload", "Change Server IP", "Exit"],
                 )
             )
@@ -50,31 +47,94 @@ class Client:
                 case 0:
                     # Download File
                     try:
+                        blksize = 512
                         filename = misc.getInput("Enter filename to retrieve: ")
-                        self.sendRequest("RRQ", filename)
-                        fileData = self.receiveFile()
+
+                        options = codes.appendOptions("RRQ")
+
+                        self.sendRequest("RRQ", filename, options)
+
+                        # await OACK, skip if no options because
+                        # regular TFTP will immediately send DATA
+                        if len(options) > 0:
+                            ackInit = self.awaitAck()
+                            
+                            if ackInit["opcode"] == 5:
+                                print("File cannot be retrieved")
+                                continue
+
+                            if ackInit["opcode"] == 6:
+                                if "blksize" in ackInit["options"]:
+                                    blksize = ackInit["options"]["blksize"]
+                                    print(f"Block size set to {blksize}")
+                                if "tsize" in ackInit["options"]:
+                                    print(f"Incoming file size: {ackInit["options"]["tsize"]}")
+
+                                # Send ACK for OACK
+                                self.sock.sendto(
+                                    b"\x00\x04\x00\x00",
+                                    (self.destIP, ackInit["transferPort"]),
+                                )
+
+                        fileData = self.receiveFile(blksize)
 
                         if fileData:
                             files.writeFile(filename, fileData)
-                    except Exception as e:
+                            print(f"{filename} was retrieved successfully\n")
+                    except Exception:
                         # file cannot be retrieved
-                        print(e)
                         pass
                 case 1:
                     # Send File
                     try:
+                        blksize = 512
                         filename = misc.getInput("Enter filename to upload: ")
 
-                        fileData = files.readFile(filename, DATALENGTH)
+                        # Can specify filename to be used on server when uploading
+                        filenameServer = misc.getInput(
+                            "Enter filename to be used on server: "
+                        )
 
-                        if fileData:
-                            self.sendRequest("WRQ", filename)
-                            self.sendFile(fileData)
+                        # Defaults to filename on client if no server filename is specified
+                        filenameServer = (
+                            filenameServer
+                            if filenameServer or filenameServer == ""
+                            else filename
+                        )
+
+                        options = codes.appendOptions("WRQ")
+
+                        if files.fileExists(filename):
+                            self.sendRequest("WRQ", filenameServer, options)
+
+                            ackInit = self.awaitAck()
+
+                            # no additional behavior for opcode 4
+
+                            if ackInit["opcode"] == 5:
+                                print("File cannot be sent")
+                                continue
+
+                            if ackInit["opcode"] == 6:
+                                if "blksize" in ackInit["options"]:
+                                    blksize = ackInit["options"]["blksize"]
+                                if "tsize" in ackInit["options"]:
+                                    print(
+                                        f"Number of bytes to be sent: {ackInit["options"]["tsize"]}"
+                                    )
+
+                            with files.readFile(filename, blksize) as fileContent:
+                                self.sendFile(fileContent)
+
                     except FileNotFoundError:
                         print(f'File "{filename}" not found')
                     except:
                         pass
                 case 2:
+                    # unbind if already bound
+                    if hasattr(self, "sock"):
+                        self.sock.close()
+
                     self.destIP = self.setDestination()
                     self.setSocket()
                 case 3:
@@ -103,14 +163,10 @@ class Client:
     def setSocket(self):
         """Bind socket to IP and port"""
 
-        # unbind if already bound
-        if hasattr(self, "sock"):
-            self.sock.close()
-
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP
         self.sock.bind(("", self.clientPort))
 
-    def sendRequest(self, mode, filename):
+    def sendRequest(self, mode, filename, options={}):
         """Sends a request to the server"""
 
         if mode not in ["RRQ", "WRQ"]:
@@ -124,35 +180,31 @@ class Client:
             + filename.encode("utf-8")
             + b"\x00octet\x00"
         )
+
+        for key in options:
+            packet += (
+                key.encode("utf-8")
+                + b"\x00"
+                + str(options[key]).encode("utf-8")
+                + b"\x00"
+            )
+
         self.sock.sendto(packet, (self.destIP, self.destReqPort))
 
-    def parseData(self, rawdata: bytes):
-        """Parses data packet by extracting opcode and relevant data depending on opcode"""
-        # got this trick from geeks for geeks
-        # https://www.geeksforgeeks.org/how-to-convert-bytes-to-int-in-python/
-        opcode = int.from_bytes(rawdata[:2])
+    def awaitAck(self):
+        try:
+            # listen for packet
+            self.sock.settimeout(5)
+            data, server = self.sock.recvfrom(512)
 
-        match opcode:
-            # DATA
-            case 3:
-                block, data = int.from_bytes(rawdata[2:4]), rawdata[4:]
-                return {"opcode": opcode, "block": block, "data": data}
-            # ACK
-            case 4:
-                block = int.from_bytes(rawdata[2:4])
-                return {"opcode": opcode, "block": block}
-            # ERROR
-            case 5:
-                errorcode, errmessage = int.from_bytes(rawdata[2:4]), rawdata[4:-2]
-                return {
-                    "opcode": opcode,
-                    "errorcode": errorcode,
-                    "errmessage": errmessage,
-                }
+            dataParsed = codes.parseData(data)
+            dataParsed["transferPort"] = server[1]
 
-        return {"opcode": opcode}
+            return dataParsed
+        except Exception as err:
+            print("[212]: ", err)
 
-    def receiveFile(self):
+    def receiveFile(self, blksize) -> bytes:
         """Listens for UDP packets containing file data"""
 
         def sendAck(blockNumber: int, transferPort: int):
@@ -171,12 +223,12 @@ class Client:
         while True:
             try:
                 # 5 second time-out
-                self.sock.settimeout(1)
-                # 4 = 2 Byte opcode + 2 byte block number for DATA
-                data, server = self.sock.recvfrom(DATALENGTH + 4)
+                self.sock.settimeout(5)
+                # idk why wireshark always has 36 bytes of extra data despite the header being 4 bytes
+                data, server = self.sock.recvfrom(blksize + 36)
                 transferPort = server[1]
 
-                data = self.parseData(data)
+                data = codes.parseData(data)
 
                 if data["opcode"] == 3:
                     blockNumbers = list(
@@ -194,7 +246,7 @@ class Client:
 
                         # See RFC 1350, sec. 6 for termination process
                         # The extra stuff here is to acccount for out of sequence packet arrival
-                        if len(data["data"]) != DATALENGTH or checkOrder:
+                        if len(data["data"]) != blksize or checkOrder:
                             # check if list of block numbers is complete
                             checkOrder = blockNumbers == list(
                                 range(1, data["block"] + 1)
@@ -205,21 +257,21 @@ class Client:
                         # Tell user that duplicate data is found
                         print(f"Duplicate DATA found; Block Num: {data["block"]}")
                 elif data["opcode"] == 5:
-                    print(
-                        f"ERROR [0x0{data["errorcode"]}]: {data["errmessage"].decode('utf-8')}"
-                    )
+                    codes.printError(data)
+                    return None
 
             except TimeoutError:
+                # Retransmit ACK if no subsequent DATA packet is received, otherwise break
                 if data and data["opcode"] == 3:
                     sendAck(data["block"], transferPort)
                 else:
                     break
                 pass
             except ConnectionResetError:
-                print("Server connection lost")
+                print("Server connection lost, check if tftp server running")
                 break
             except Exception as err:
-                print(type(err).__name__, err)
+                print(f"[272 {type(err).__name__}]: {err}")
                 break
 
         if len(uniquePackets) == 0:
@@ -234,7 +286,7 @@ class Client:
         return fileData
 
     def sendFile(self, filecontent: list[dict[int, bytes]]) -> None:
-        """Splits file content into packets and sends them to the server"""
+        """Sends split file contents into packets to the server"""
 
         sentBlocks = []
 
@@ -246,41 +298,60 @@ class Client:
             except Exception as e:
                 print(e)
 
+        numTimeouts = 0
+
+        # Send the first block as that was handled before this function was called
+        sendBlock(1, filecontent[1], transferPort)
+
         while True:
             try:
-                # 5 second time-out
-                self.sock.settimeout(5)
+                # 1 second time-out
+                self.sock.settimeout(1)
 
                 # listen for ACKs and ERRORs
                 data, server = self.sock.recvfrom(DATALENGTH + 4)
                 transferPort = server[1]
 
                 if data:
-                    data = self.parseData(data)
+                    data = codes.parseData(data)
                 else:
-                    continue
-
-                # Skip duplicate ACKs
-                if data["block"] in sentBlocks:
-                    print(f"Duplicate ACK found; Block Num: {data["block"]}")
                     continue
 
                 match data["opcode"]:
                     case 4:
-                        # print(f"ACK: Block {data["block"]}") # DEBUG ONLY
+                        # Skip duplicate ACKs
+                        if data["block"] in sentBlocks:
+                            print(
+                                f"Duplicate ACK found; Block Num: {data["block"]}"
+                            )  # DEBUG ONLY
+                            continue
+
+                        print(f"ACK: Block {data["block"]}")  # DEBUG ONLY
+
+                        # Add block number to list of sent blocks
                         sentBlocks.append(data["block"])
 
                         nextBlock = data["block"] + 1
 
                         if nextBlock in filecontent:
                             sendBlock(nextBlock, filecontent[nextBlock], transferPort)
+                        elif (
+                            filecontent[nextBlock - 1]
+                            and len(filecontent[nextBlock - 1]) == 512
+                        ):
+                            # If the last block is exactly 512 bytes, send an empty block to signal the end of the file
+                            sendBlock(nextBlock, b"", transferPort)
                         else:
                             print("File sent successfully!")
                             return
                     case 5:
-                        print(
-                            f"ERROR [0x0{data["errorcode"]}]: {data["errmessage"].decode('utf-8')}"
-                        )
+                        codes.printError(data)
+                        return
+                    # OACK should already be handled in the initial request
+                    case 6:
+                        if "blksize" in data["options"]:
+                            DATALENGTH = data["options"]["blksize"]
+                            print(f"Block size set to {DATALENGTH}")
 
             except ConnectionResetError:
                 # idk why or how this exception is even possible in UDP but it is
@@ -288,9 +359,11 @@ class Client:
                 break
 
             except TimeoutError:
-                if data and data["opcode"] == 4:
+                # Retransmit block if no ACK is received, otherwise break
+                if data and data["opcode"] == 4 and numTimeouts < 5:
                     print(f"TIMEOUT: Resending block {data["block"] + 1}")
                     sendBlock(filecontent[data["block"] + 1], transferPort)
+                    numTimeouts += 1
                 else:
                     break
             except Exception as e:
@@ -298,6 +371,10 @@ class Client:
 
 
 if __name__ == "__main__":
+    host = socket.gethostbyname(socket.gethostname())
     misc.onStart()
 
-    client = Client()
+    if len(sys.argv) > 1 and sys.argv[1] == "-local":
+        client = Client(host)
+    else:
+        client = Client()

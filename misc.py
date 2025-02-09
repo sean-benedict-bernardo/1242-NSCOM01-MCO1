@@ -17,7 +17,6 @@ by Bernardo and Strebel\n\n"""
 
 def getInput(prompt: str, options: list = []) -> str | int:
     """Gets user input, if options are provided, the user must choose from the options"""
-    print()
     print(prompt)
 
     if len(options) != 0:
@@ -26,7 +25,7 @@ def getInput(prompt: str, options: list = []) -> str | int:
 
     print("\n> ", end="")
 
-    try: 
+    try:
         if len(options) != 0:
             while True:
                 try:
