@@ -1,4 +1,4 @@
-import misc
+import tftp_misc
 
 OPCODES = {1: "RRQ", 2: "WRQ", 3: "DATA", 4: "ACK", 5: "ERROR"}
 
@@ -31,7 +31,7 @@ def appendOptions(mode: str) -> dict:
     options = {}
 
     while True and len(options.keys()) < 2:
-        tempOption = misc.getInput(
+        tempOption = tftp_misc.getInput(
             "What options would you like to append",
             ["Block size", "Transfer Communication size", "None"],
         )
@@ -40,7 +40,7 @@ def appendOptions(mode: str) -> dict:
             case 0:
                 while True:
                     try:
-                        blocksize = misc.getInput("Enter block size: ")
+                        blocksize = tftp_misc.getInput("Enter block size: ")
                         # Check if block size is a number and within the valid range as per RFC 2348
                         if (
                             blocksize.isdigit()
@@ -62,7 +62,7 @@ def appendOptions(mode: str) -> dict:
                             options["tsize"] = 0
                             break
                         else:
-                            tsize = misc.getInput("Enter transfer size: ")
+                            tsize = tftp_misc.getInput("Enter transfer size: ")
                             if tsize.isdigit():
                                 options["tsize"] = int(tsize)
                                 break

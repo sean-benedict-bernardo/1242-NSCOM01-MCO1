@@ -2,7 +2,7 @@
 Contains miscellaneous functions
 """
 
-import files
+import tftp_files
 
 
 def onStart() -> None:
@@ -12,7 +12,7 @@ def onStart() -> None:
         """\n\nTFTPv2 Client Implementation
 by Bernardo and Strebel\n\n"""
     )
-    files.makeFolder()
+    tftp_files.makeFolder()
 
 
 def getInput(prompt: str, options: list = []) -> str | int:

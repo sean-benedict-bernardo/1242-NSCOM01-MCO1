@@ -8,7 +8,7 @@ Bernardo, Sean Benedict G.
 """
 
 # Custom imports
-import files, misc, packets
+import tftp_files, tftp_misc, tftp_packets
 
 # Python imports
 import socket, sys, time
@@ -37,7 +37,7 @@ class Client:
             print("============ TFTPv2 Client ============")
             print(f"Set Destination IP: {self.destIP}\n")
             userInput = int(
-                misc.getInput(
+                tftp_misc.getInput(
                     f"What would you like to do",
                     ["Download File", "Upload", "Change Server IP", "Exit"],
                 )
@@ -48,9 +48,9 @@ class Client:
                     # Download File
                     try:
                         blksize = 512
-                        filename = misc.getInput("Enter filename to retrieve: ")
+                        filename = tftp_misc.getInput("Enter filename to retrieve: ")
 
-                        options = packets.appendOptions("RRQ")
+                        options = tftp_packets.appendOptions("RRQ")
 
                         self.sendRequest("RRQ", filename, options)
 
@@ -78,7 +78,7 @@ class Client:
                         fileData = self.receiveFile(blksize)
 
                         if fileData:
-                            files.writeFile(filename, fileData)
+                            tftp_files.writeFile(filename, fileData)
                             print(f"{filename} was retrieved successfully\n")
                         else: # File cannot be retrieved
                             print(f"{filename} cannot be retrieved\n")
@@ -89,10 +89,10 @@ class Client:
                     # Send File
                     try:
                         blksize = 512
-                        filename = misc.getInput("Enter filename to upload: ")
+                        filename = tftp_misc.getInput("Enter filename to upload: ")
 
                         # Can specify filename to be used on server when uploading
-                        filenameServer = misc.getInput(
+                        filenameServer = tftp_misc.getInput(
                             "Enter filename to be used on server: "
                         )
 
@@ -103,9 +103,9 @@ class Client:
                             else filename
                         )
 
-                        options = packets.appendOptions("WRQ")
+                        options = tftp_packets.appendOptions("WRQ")
 
-                        if files.fileExists(filename):
+                        if tftp_files.fileExists(filename):
                             self.sendRequest("WRQ", filenameServer, options)
 
                             ackInit = self.awaitAck()
@@ -124,7 +124,7 @@ class Client:
                                         f"Number of bytes to be sent: {ackInit["options"]["tsize"]}"
                                     )
 
-                            with files.readFile(filename, blksize) as fileContent:
+                            with tftp_files.readFile(filename, blksize) as fileContent:
                                 self.sendFile(fileContent)
 
                     except FileNotFoundError:
@@ -147,7 +147,7 @@ class Client:
         # TODO: add support for IPv6
 
         while True:
-            localIP = misc.getInput("Enter destination IP address: ")
+            localIP = tftp_misc.getInput("Enter destination IP address: ")
             # Check if IP is valid
             if localIP == "localhost":
                 return localIP
@@ -198,7 +198,7 @@ class Client:
             self.sock.settimeout(5)
             data, server = self.sock.recvfrom(512)
 
-            dataParsed = packets.parseData(data)
+            dataParsed = tftp_packets.parseData(data)
             dataParsed["transferPort"] = server[1]
 
             return dataParsed
@@ -233,7 +233,7 @@ class Client:
 
                 transferPort = server[1]
 
-                data = packets.parseData(data)
+                data = tftp_packets.parseData(data)
 
                 if data["opcode"] == 3:
                     blockNumbers = list(
@@ -265,7 +265,7 @@ class Client:
                         # Tell user that duplicate data is found
                         print(f"Duplicate DATA found; Block Num: {data["block"]}")
                 elif data["opcode"] == 5:
-                    packets.printError(data)
+                    tftp_packets.printError(data)
                     return None
 
             except TimeoutError:
@@ -323,7 +323,7 @@ class Client:
                 transferPort = server[1]
 
                 if data:
-                    data = packets.parseData(data)
+                    data = tftp_packets.parseData(data)
                 else:
                     continue
 
@@ -355,7 +355,7 @@ class Client:
                             print("File sent successfully!")
                             return
                     case 5:
-                        packets.printError(data)
+                        tftp_packets.printError(data)
                         return
                     # OACK should already be handled in the initial request
                     case 6:
@@ -382,7 +382,7 @@ class Client:
 
 if __name__ == "__main__":
     host = socket.gethostbyname(socket.gethostname())
-    misc.onStart()
+    tftp_misc.onStart()
 
     if len(sys.argv) > 1 and sys.argv[1] == "-local":
         client = Client(host)
