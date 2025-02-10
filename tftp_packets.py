@@ -19,10 +19,10 @@ def printError(packet) -> None:
     errcode = packet["errorcode"]
     errmessage = packet["errmessage"]
 
-    if errcode != 0:
-        print(f"ERROR [0x0{errcode}]: {ERRORCODES[errcode]}")
+    if errcode in ERRORCODES and errcode != 0:
+        print(f"ERROR [0x{"{:02d}".format(errcode)}]: {ERRORCODES[errcode]}")
     else:
-        print(f"ERROR [0x0{errcode}]: {errmessage}")
+        print(f"ERROR [0x{"{:02d}".format(errcode)}]: {errmessage}")
 
     print()
 

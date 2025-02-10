@@ -8,10 +8,10 @@ Bernardo, Sean Benedict G.
 """
 
 # Custom imports
-import files, misc, codes
+import files, misc, packets
 
 # Python imports
-import socket, sys
+import socket, sys, time
 
 IP, PORT = "127.0.0.1", 69
 CLIENTPORT = 51125  # u-i-i-a-u in lol
@@ -50,7 +50,7 @@ class Client:
                         blksize = 512
                         filename = misc.getInput("Enter filename to retrieve: ")
 
-                        options = codes.appendOptions("RRQ")
+                        options = packets.appendOptions("RRQ")
 
                         self.sendRequest("RRQ", filename, options)
 
@@ -80,6 +80,8 @@ class Client:
                         if fileData:
                             files.writeFile(filename, fileData)
                             print(f"{filename} was retrieved successfully\n")
+                        else: # File cannot be retrieved
+                            print(f"{filename} cannot be retrieved\n")
                     except Exception:
                         # file cannot be retrieved
                         pass
@@ -101,7 +103,7 @@ class Client:
                             else filename
                         )
 
-                        options = codes.appendOptions("WRQ")
+                        options = packets.appendOptions("WRQ")
 
                         if files.fileExists(filename):
                             self.sendRequest("WRQ", filenameServer, options)
@@ -196,7 +198,7 @@ class Client:
             self.sock.settimeout(5)
             data, server = self.sock.recvfrom(512)
 
-            dataParsed = codes.parseData(data)
+            dataParsed = packets.parseData(data)
             dataParsed["transferPort"] = server[1]
 
             return dataParsed
@@ -208,12 +210,15 @@ class Client:
         packet = b"\x00\x04" + blockNumber.to_bytes(2)
         self.sock.sendto(packet, (self.destIP, transferPort))
 
-    def receiveFile(self, blksize) -> bytes:
+    def receiveFile(self, blksize) -> bytes | None:
         """Listens for UDP packets containing file data"""
 
         # have a list of the previous blocks
         # for duplicate detection and reordering
         uniquePackets = []
+        
+        # keep track of timeouts
+        numTimeouts = 0
 
         # this variable becomes true when the last packet comes in
         # while there are potentially other packets still being sent
@@ -223,11 +228,12 @@ class Client:
             try:
                 # 5 second time-out
                 self.sock.settimeout(5)
-                # idk why wireshark always has 36 bytes of extra data despite the header being 4 bytes
-                data, server = self.sock.recvfrom(blksize + 36)
+                # 4 bytes = 2-byte opcode + 2-byte block number
+                data, server = self.sock.recvfrom(blksize + 4)
+
                 transferPort = server[1]
 
-                data = codes.parseData(data)
+                data = packets.parseData(data)
 
                 if data["opcode"] == 3:
                     blockNumbers = list(
@@ -243,6 +249,9 @@ class Client:
                         uniquePackets.append(data)
                         self.sendAck(data["block"], transferPort)
 
+                        # reset number of timeouts
+                        numTimeouts = 0
+
                         # See RFC 1350, sec. 6 for termination process
                         # The extra stuff here is to acccount for out of sequence packet arrival
                         if len(data["data"]) != blksize or checkOrder:
@@ -256,15 +265,16 @@ class Client:
                         # Tell user that duplicate data is found
                         print(f"Duplicate DATA found; Block Num: {data["block"]}")
                 elif data["opcode"] == 5:
-                    codes.printError(data)
+                    packets.printError(data)
                     return None
 
             except TimeoutError:
                 # Retransmit ACK if no subsequent DATA packet is received, otherwise break
-                if data and data["opcode"] == 3:
+                if data and data["opcode"] == 3 and numTimeouts < 5:
                     self.sendAck(data["block"], transferPort)
+                    numTimeouts += 1
                 else:
-                    break
+                    return None
                 pass
             except ConnectionResetError:
                 print("Server connection lost, check if tftp server running")
@@ -274,7 +284,8 @@ class Client:
                 break
 
         if len(uniquePackets) == 0:
-            raise Exception("File cannot be retrieved")
+            print("ERROR: File cannot be retrieved")
+            return None
 
         # Sort data by block sequence number
         uniquePackets.sort(key=lambda data: data["block"])
@@ -312,7 +323,7 @@ class Client:
                 transferPort = server[1]
 
                 if data:
-                    data = codes.parseData(data)
+                    data = packets.parseData(data)
                 else:
                     continue
 
@@ -344,7 +355,7 @@ class Client:
                             print("File sent successfully!")
                             return
                     case 5:
-                        codes.printError(data)
+                        packets.printError(data)
                         return
                     # OACK should already be handled in the initial request
                     case 6:
