@@ -58,7 +58,7 @@ class Client:
                         # regular TFTP will immediately send DATA
                         if len(options) > 0:
                             ackInit = self.awaitAck()
-                            
+
                             if ackInit["opcode"] == 5:
                                 print("File cannot be retrieved")
                                 continue
@@ -68,13 +68,12 @@ class Client:
                                     blksize = ackInit["options"]["blksize"]
                                     print(f"Block size set to {blksize}")
                                 if "tsize" in ackInit["options"]:
-                                    print(f"Incoming file size: {ackInit["options"]["tsize"]}")
+                                    print(
+                                        f"Incoming file size: {ackInit["options"]["tsize"]}"
+                                    )
 
                                 # Send ACK for OACK
-                                self.sock.sendto(
-                                    b"\x00\x04\x00\x00",
-                                    (self.destIP, ackInit["transferPort"]),
-                                )
+                                self.sendAck(0, ackInit["transferPort"])
 
                         fileData = self.receiveFile(blksize)
 
@@ -167,7 +166,7 @@ class Client:
         self.sock.bind(("", self.clientPort))
 
     def sendRequest(self, mode, filename, options={}):
-        """Sends a request to the server"""
+        """Sends RRQ or WRQ to server"""
 
         if mode not in ["RRQ", "WRQ"]:
             # if this is somehow thrown, im an idiot
@@ -204,13 +203,13 @@ class Client:
         except Exception as err:
             print("[212]: ", err)
 
+    def sendAck(self, blockNumber: int, transferPort: int):
+        """Sends an acknowledgment to the server"""
+        packet = b"\x00\x04" + blockNumber.to_bytes(2)
+        self.sock.sendto(packet, (self.destIP, transferPort))
+
     def receiveFile(self, blksize) -> bytes:
         """Listens for UDP packets containing file data"""
-
-        def sendAck(blockNumber: int, transferPort: int):
-            """Sends an acknowledgment to the server"""
-            packet = b"\x00\x04" + blockNumber.to_bytes(2)
-            self.sock.sendto(packet, (self.destIP, transferPort))
 
         # have a list of the previous blocks
         # for duplicate detection and reordering
@@ -242,7 +241,7 @@ class Client:
                         # There are occasions that a packet with 0 bytes of data will be added
                         # This is fine 🔥🔥🔥
                         uniquePackets.append(data)
-                        sendAck(data["block"], transferPort)
+                        self.sendAck(data["block"], transferPort)
 
                         # See RFC 1350, sec. 6 for termination process
                         # The extra stuff here is to acccount for out of sequence packet arrival
@@ -263,7 +262,7 @@ class Client:
             except TimeoutError:
                 # Retransmit ACK if no subsequent DATA packet is received, otherwise break
                 if data and data["opcode"] == 3:
-                    sendAck(data["block"], transferPort)
+                    self.sendAck(data["block"], transferPort)
                 else:
                     break
                 pass
