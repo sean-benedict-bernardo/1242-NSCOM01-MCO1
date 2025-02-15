@@ -11,19 +11,28 @@ Bernardo, Sean Benedict G.
 import tftp_files, tftp_misc, tftp_packets
 
 # Python imports
-import socket, sys, time
+import socket, sys, random
 
-IP, PORT = "127.0.0.1", 69
-CLIENTPORT = 51125  # u-i-i-a-u in lol
+# IP, PORT = "127.0.0.1", 69
 
 
 class Client:
     def __init__(self, destIP: str = None):
         self.destIP = self.setDestination() if destIP == None else destIP
-        self.destReqPort = 69  # nice
-        self.clientPort = CLIENTPORT
 
+        # A requesting host chooses its source TID as described
+        # above, and sends its initial request to the known TID
+        # 69 decimal (105 octal) on the serving host.
+        self.destReqPort = 69  # but also nice
+
+        # as per clarification, this does not need to be reset
+        # for every file transfer but only on program run
+        self.clientPort = self.setOpenPort()
+
+        # bind client socket to start sending packets
         self.setSocket()
+
+        # client loop
         self.loop()
 
     def __del__(self):
@@ -33,111 +42,128 @@ class Client:
 
     def loop(self):
         """Main loop for the client"""
+
+        def opDownload():
+            # Download File
+            try:
+                blksize = 512
+                filename = tftp_misc.getInput("Enter filename to retrieve: ")
+
+                options = tftp_packets.appendOptions("RRQ")
+
+                self.sendRequest("RRQ", filename, options)
+
+                ackInit = None
+
+                # await OACK, skip if no options because
+                # regular TFTP will immediately send DATA
+                if len(options) > 0:
+                    ackInit = self.awaitAck()
+
+                    if ackInit["opcode"] == 5:
+                        print("File cannot be retrieved")
+                        return
+
+                    if ackInit["opcode"] == 6:
+                        if "blksize" in ackInit["options"]:
+                            blksize = ackInit["options"]["blksize"]
+                            print(f"Block size set to {blksize}")
+                        if "tsize" in ackInit["options"]:
+                            print(f"Incoming file size: {ackInit["options"]["tsize"]}")
+
+                        # Send ACK for OACK
+                        self.sendAck(0, ackInit["transferPort"])
+
+                fileData = self.receiveFile(
+                    blksize, ackInit["transferPort"] if ackInit else None
+                )
+
+                if fileData:
+                    tftp_files.writeFile(filename, fileData)
+                    print(f"{filename} was retrieved successfully\n")
+                else:  # File cannot be retrieved
+                    print(f"{filename} cannot be retrieved\n")
+            except Exception:
+                # file cannot be retrieved
+                pass
+
+        def opUpload():
+
+            # Send File
+            try:
+                blksize = 512
+                filename = tftp_misc.getInput("Enter filename to upload: ")
+
+                # Can specify filename to be used on server when uploading
+                filenameServer = tftp_misc.getInput(
+                    "Enter filename to be used on server: "
+                )
+
+                # Defaults to filename on client if no server filename is specified
+                filenameServer = (
+                    filenameServer
+                    if filenameServer or filenameServer == ""
+                    else filename
+                )
+
+                options = tftp_packets.appendOptions("WRQ")
+
+                ackInit = None
+
+                if tftp_files.fileExists(filename):
+                    self.sendRequest("WRQ", filenameServer, options)
+
+                    ackInit = self.awaitAck()
+
+                    # no additional behavior for opcode 4
+
+                    if ackInit["opcode"] == 5:
+                        print("File cannot be sent")
+                        return
+
+                    if ackInit["opcode"] == 6:
+                        if "blksize" in ackInit["options"]:
+                            blksize = ackInit["options"]["blksize"]
+                        if "tsize" in ackInit["options"]:
+                            print(
+                                f"Number of bytes to be sent: {ackInit["options"]["tsize"]}"
+                            )
+
+                    with tftp_files.readFile(filename, blksize) as fileContent:
+                        self.sendFile(
+                            fileContent, ackInit["transferPort"] if ackInit else None
+                        )
+
+            except FileNotFoundError:
+                print(f'File "{filename}" not found')
+            except:
+                pass
+
+        def opChangeDest():
+            """Allows client to change destination server IP address after startup"""
+            if hasattr(self, "sock"):
+                self.sock.close()
+
+            self.destIP = self.setDestination()
+            self.setSocket()
+
         while True:
             print("============ TFTPv2 Client ============")
             print(f"Set Destination IP: {self.destIP}\n")
             userInput = int(
                 tftp_misc.getInput(
                     f"What would you like to do",
-                    ["Download File", "Upload", "Change Server IP", "Exit"],
+                    ["Download File", "Upload File", "Change TFTP Server IP", "Exit"],
                 )
             )
 
             match userInput:
                 case 0:
-                    # Download File
-                    try:
-                        blksize = 512
-                        filename = tftp_misc.getInput("Enter filename to retrieve: ")
-
-                        options = tftp_packets.appendOptions("RRQ")
-
-                        self.sendRequest("RRQ", filename, options)
-
-                        # await OACK, skip if no options because
-                        # regular TFTP will immediately send DATA
-                        if len(options) > 0:
-                            ackInit = self.awaitAck()
-
-                            if ackInit["opcode"] == 5:
-                                print("File cannot be retrieved")
-                                continue
-
-                            if ackInit["opcode"] == 6:
-                                if "blksize" in ackInit["options"]:
-                                    blksize = ackInit["options"]["blksize"]
-                                    print(f"Block size set to {blksize}")
-                                if "tsize" in ackInit["options"]:
-                                    print(
-                                        f"Incoming file size: {ackInit["options"]["tsize"]}"
-                                    )
-
-                                # Send ACK for OACK
-                                self.sendAck(0, ackInit["transferPort"])
-
-                        fileData = self.receiveFile(blksize)
-
-                        if fileData:
-                            tftp_files.writeFile(filename, fileData)
-                            print(f"{filename} was retrieved successfully\n")
-                        else: # File cannot be retrieved
-                            print(f"{filename} cannot be retrieved\n")
-                    except Exception:
-                        # file cannot be retrieved
-                        pass
+                    opDownload()
                 case 1:
-                    # Send File
-                    try:
-                        blksize = 512
-                        filename = tftp_misc.getInput("Enter filename to upload: ")
-
-                        # Can specify filename to be used on server when uploading
-                        filenameServer = tftp_misc.getInput(
-                            "Enter filename to be used on server: "
-                        )
-
-                        # Defaults to filename on client if no server filename is specified
-                        filenameServer = (
-                            filenameServer
-                            if filenameServer or filenameServer == ""
-                            else filename
-                        )
-
-                        options = tftp_packets.appendOptions("WRQ")
-
-                        if tftp_files.fileExists(filename):
-                            self.sendRequest("WRQ", filenameServer, options)
-
-                            ackInit = self.awaitAck()
-
-                            # no additional behavior for opcode 4
-
-                            if ackInit["opcode"] == 5:
-                                print("File cannot be sent")
-                                continue
-
-                            if ackInit["opcode"] == 6:
-                                if "blksize" in ackInit["options"]:
-                                    blksize = ackInit["options"]["blksize"]
-                                if "tsize" in ackInit["options"]:
-                                    print(
-                                        f"Number of bytes to be sent: {ackInit["options"]["tsize"]}"
-                                    )
-
-                            with tftp_files.readFile(filename, blksize) as fileContent:
-                                self.sendFile(fileContent)
-
-                    except FileNotFoundError:
-                        print(f'File "{filename}" not found')
-                    except:
-                        pass
+                    opUpload()
                 case 2:
-                    # unbind if already bound
-                    if hasattr(self, "sock"):
-                        self.sock.close()
-
-                    self.destIP = self.setDestination()
-                    self.setSocket()
+                    opChangeDest()
                 case 3:
                     print("\nExiting...\n")
                     return
@@ -160,6 +186,20 @@ class Client:
                     print("Invalid IP")
                     continue
             return localIP
+
+    def setOpenPort(self):
+        """Selects an open port for datas"""
+        # see RFC 6335 for dynamic port range
+        # tl;dr: ports in this range are not to be reserved at IANA
+        portMin, portMax = 49152, 65565
+
+        while True:
+            candidatePort = random.randint(portMin, portMax + 1)
+
+            # https://stackoverflow.com/a/19196218
+            result = self.sock.connect_ex(("127.0.0.1", candidatePort))
+            if result == 0:
+                return candidatePort
 
     def setSocket(self):
         """Bind socket to IP and port"""
@@ -210,13 +250,28 @@ class Client:
         packet = b"\x00\x04" + blockNumber.to_bytes(2)
         self.sock.sendto(packet, (self.destIP, transferPort))
 
-    def receiveFile(self, blksize) -> bytes | None:
+    def sendError(self, transferPort: int, errcode: int = 0):
+        """Send error to server with unidentified transfer ID"""
+
+        packet = (
+            b"\x00\x05"
+            + errcode.to_bytes(2)
+            + tftp_packets.ERRORCODES[errcode]
+            + b"\x00"
+        )
+
+        self.sock.sendto(packet, (self.destIP, transferPort))
+        pass
+
+    def receiveFile(
+        self, blksize: int, initialTransferPort: int = None
+    ) -> bytes | None:
         """Listens for UDP packets containing file data"""
 
         # have a list of the previous blocks
         # for duplicate detection and reordering
         uniquePackets = []
-        
+
         # keep track of timeouts
         numTimeouts = 0
 
@@ -232,6 +287,23 @@ class Client:
                 data, server = self.sock.recvfrom(blksize + 4)
 
                 transferPort = server[1]
+
+                if initialTransferPort == None:
+                    # Set initial transfer port if first
+                    # DATA is first response from server
+                    initialTransferPort = server[1]
+                elif transferPort != initialTransferPort:
+                    # "If a source TID does not match,
+                    # the packet should be discarded as
+                    # erroneously sent from somewhere else."
+
+                    # *do nothing to discard*
+
+                    # An error packet should be sent to the
+                    # source of the incorrect packet...
+                    self.sendError(transferPort, 5)
+                    # while not disturbing the transfer
+                    continue
 
                 data = tftp_packets.parseData(data)
 
@@ -284,7 +356,6 @@ class Client:
                 break
 
         if len(uniquePackets) == 0:
-            print("ERROR: File cannot be retrieved")
             return None
 
         # Sort data by block sequence number
@@ -295,12 +366,14 @@ class Client:
 
         return fileData
 
-    def sendFile(self, filecontent: list[dict[int, bytes]]) -> None:
+    def sendFile(
+        self, filecontent: list[dict[int, bytes]], transferPort: int | None = None
+    ) -> None:
         """Sends split file contents into packets to the server"""
 
         sentBlocks = []
 
-        def sendBlock(blockNumber: int, data: bytes, transferPort: int) -> None:
+        def sendBlock(blockNumber: int, data: bytes, initialTransferPort: int) -> None:
             """Sends a block to the server"""
             try:
                 packet = b"\x00\x03" + blockNumber.to_bytes(2) + data
@@ -319,8 +392,26 @@ class Client:
                 self.sock.settimeout(1)
 
                 # listen for ACKs and ERRORs
-                data, server = self.sock.recvfrom(DATALENGTH + 4)
+                # 512 cuz why not lol
+                data, server = self.sock.recvfrom(512)
                 transferPort = server[1]
+
+                if initialTransferPort == None:
+                    # Set initial transfer port if first
+                    # DATA is first response from server
+                    initialTransferPort = server[1]
+                elif transferPort != initialTransferPort:
+                    # "If a source TID does not match,
+                    # the packet should be discarded as
+                    # erroneously sent from somewhere else."
+
+                    # *do nothing to discard*
+
+                    # An error packet should be sent to the
+                    # source of the incorrect packet...
+                    self.sendError(transferPort, 5)
+                    # while not disturbing the transfer
+                    continue # aka we skip to the next packet
 
                 if data:
                     data = tftp_packets.parseData(data)
@@ -357,11 +448,6 @@ class Client:
                     case 5:
                         tftp_packets.printError(data)
                         return
-                    # OACK should already be handled in the initial request
-                    case 6:
-                        if "blksize" in data["options"]:
-                            DATALENGTH = data["options"]["blksize"]
-                            print(f"Block size set to {DATALENGTH}")
 
             except ConnectionResetError:
                 # idk why or how this exception is even possible in UDP but it is
