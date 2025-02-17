@@ -1,8 +1,10 @@
 import os
 
+
 def fileExists(filename: str) -> bool:
     """Checks if a file exists"""
     return os.path.exists(f"client/{filename}")
+
 
 def makeFolder() -> None:
     """Creates a directory if it does not exist"""
@@ -42,7 +44,10 @@ def readFile(filename: str, numBytes: int = -1) -> bytes | list[dict[str, bytes]
             fileContent = file.read()
 
         file.close()
+
         return fileContent
 
     except FileNotFoundError as e:
         raise e
+    except Exception as e:
+        print(f"Error reading file: {e}")

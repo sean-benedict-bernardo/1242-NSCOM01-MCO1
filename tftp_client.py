@@ -25,6 +25,8 @@ class Client:
         # 69 decimal (105 octal) on the serving host.
         self.destReqPort = 69  # but also nice
 
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
         # as per clarification, this does not need to be reset
         # for every file transfer but only on program run
         self.clientPort = self.setOpenPort()
@@ -94,45 +96,49 @@ class Client:
                 blksize = 512
                 filename = tftp_misc.getInput("Enter filename to upload: ")
 
-                # Can specify filename to be used on server when uploading
-                filenameServer = tftp_misc.getInput(
-                    "Enter filename to be used on server: "
-                )
-
-                # Defaults to filename on client if no server filename is specified
-                filenameServer = (
-                    filenameServer
-                    if filenameServer or filenameServer == ""
-                    else filename
-                )
-
-                options = tftp_packets.appendOptions("WRQ")
-
                 ackInit = None
 
-                if tftp_files.fileExists(filename):
-                    self.sendRequest("WRQ", filenameServer, options)
+                if not tftp_files.fileExists(filename):
+                    print(f'File "{filename}" not found\n')
+                    return
 
-                    ackInit = self.awaitAck()
+                # Can specify filename to be used on server when uploading
+                filenameServer = tftp_misc.getInput(
+                    "Enter filename to be used on server [Enter to default]: "
+                )
+                # Defaults to filename on client if no server filename is specified
+                if not filenameServer or filenameServer != "":
+                    filenameServer = filename
 
-                    # no additional behavior for opcode 4
+                # append options
+                options = tftp_packets.appendOptions("WRQ")
 
-                    if ackInit["opcode"] == 5:
-                        print("File cannot be sent")
-                        return
+                # send request
+                self.sendRequest("WRQ", filenameServer, options)
+                # await request
+                ackInit = self.awaitAck()
 
-                    if ackInit["opcode"] == 6:
-                        if "blksize" in ackInit["options"]:
-                            blksize = ackInit["options"]["blksize"]
-                        if "tsize" in ackInit["options"]:
-                            print(
-                                f"Number of bytes to be sent: {ackInit["options"]["tsize"]}"
-                            )
+                # no additional behavior for opcode 4
 
-                    with tftp_files.readFile(filename, blksize) as fileContent:
-                        self.sendFile(
-                            fileContent, ackInit["transferPort"] if ackInit else None
-                        )
+                if ackInit["opcode"] == 5:
+                    tftp_packets.printError(ackInit)
+                    return
+
+                if ackInit["opcode"] == 6:
+                    if "blksize" in ackInit["options"]:
+                        blksize = ackInit["options"]["blksize"]
+                        print(f"Receiving block size set to {blksize} bytes")
+                    if "tsize" in ackInit["options"]:
+                        tsize = ackInit["options"]["tsize"]
+                        print(f"To be sent: {tsize} bytes")
+
+                try:
+                    fileContent = tftp_files.readFile(filename, blksize)
+                except Exception as e:
+                    print(e)
+                    return
+
+                self.sendFile(ackInit["transferPort"], fileContent, blksize)
 
             except FileNotFoundError:
                 print(f'File "{filename}" not found')
@@ -366,25 +372,28 @@ class Client:
 
         return fileData
 
+    # Note to self: figure out why tf there's a seperate
+    # ACK packet being received regardless of optioned or not optioned
     def sendFile(
-        self, filecontent: list[dict[int, bytes]], transferPort: int | None = None
+        self,
+        initialTransferPort: int,
+        filecontent: list[dict[int, bytes]],
+        transferSize=512,
     ) -> None:
         """Sends split file contents into packets to the server"""
 
         sentBlocks = []
 
-        def sendBlock(blockNumber: int, data: bytes, initialTransferPort: int) -> None:
+        def sendBlock(blockNumber: int, data: bytes, transferPort: int) -> None:
             """Sends a block to the server"""
             try:
                 packet = b"\x00\x03" + blockNumber.to_bytes(2) + data
                 self.sock.sendto(packet, (self.destIP, transferPort))
             except Exception as e:
-                print(e)
-
-        numTimeouts = 0
+                raise e
 
         # Send the first block as that was handled before this function was called
-        sendBlock(1, filecontent[1], transferPort)
+        sendBlock(1, filecontent[1], initialTransferPort)
 
         while True:
             try:
@@ -396,10 +405,12 @@ class Client:
                 data, server = self.sock.recvfrom(512)
                 transferPort = server[1]
 
+                print(data, server)
+
                 if initialTransferPort == None:
                     # Set initial transfer port if first
                     # DATA is first response from server
-                    initialTransferPort = server[1]
+                    initialTransferPort = transferPort
                 elif transferPort != initialTransferPort:
                     # "If a source TID does not match,
                     # the packet should be discarded as
@@ -411,7 +422,7 @@ class Client:
                     # source of the incorrect packet...
                     self.sendError(transferPort, 5)
                     # while not disturbing the transfer
-                    continue # aka we skip to the next packet
+                    continue  # aka we skip to the next packet
 
                 if data:
                     data = tftp_packets.parseData(data)
@@ -421,13 +432,13 @@ class Client:
                 match data["opcode"]:
                     case 4:
                         # Skip duplicate ACKs
-                        if data["block"] in sentBlocks:
+                        if data["block"] in sentBlocks or data["block"] == 0:
                             print(
                                 f"Duplicate ACK found; Block Num: {data["block"]}"
                             )  # DEBUG ONLY
                             continue
 
-                        print(f"ACK: Block {data["block"]}")  # DEBUG ONLY
+                        # print(f"ACK: Block {data["block"]}")  # DEBUG ONLY
 
                         # Add block number to list of sent blocks
                         sentBlocks.append(data["block"])
@@ -438,9 +449,9 @@ class Client:
                             sendBlock(nextBlock, filecontent[nextBlock], transferPort)
                         elif (
                             filecontent[nextBlock - 1]
-                            and len(filecontent[nextBlock - 1]) == 512
+                            and len(filecontent[nextBlock - 1]) == transferSize
                         ):
-                            # If the last block is exactly 512 bytes, send an empty block to signal the end of the file
+                            # If the last block is exactly 512 bytes, or transferSize, send an empty block to signal the end of the file
                             sendBlock(nextBlock, b"", transferPort)
                         else:
                             print("File sent successfully!")
@@ -456,13 +467,15 @@ class Client:
 
             except TimeoutError:
                 # Retransmit block if no ACK is received, otherwise break
-                if data and data["opcode"] == 4 and numTimeouts < 5:
+                if data and data["opcode"] != 4 or numTimeouts < 5:
                     print(f"TIMEOUT: Resending block {data["block"] + 1}")
                     sendBlock(filecontent[data["block"] + 1], transferPort)
                     numTimeouts += 1
                 else:
+                    print("Timed out")
                     break
             except Exception as e:
+                print(e)
                 break
 
 
