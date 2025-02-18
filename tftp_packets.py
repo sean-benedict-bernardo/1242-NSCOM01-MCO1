@@ -74,7 +74,7 @@ def appendOptions(mode: str) -> dict:
     return options
 
 
-def parseData(rawdata: bytes):
+def parseData(rawdata: bytes) -> dict:
     """Parses data packet by extracting opcode and relevant data depending on opcode"""
     # got this trick from geeks for geeks
     # https://www.geeksforgeeks.org/how-to-convert-bytes-to-int-in-python/

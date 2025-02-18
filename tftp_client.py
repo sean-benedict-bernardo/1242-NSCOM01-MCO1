@@ -24,7 +24,6 @@ class Client:
         # above, and sends its initial request to the known TID
         # 69 decimal (105 octal) on the serving host.
         self.destReqPort = 69  # but also nice
-
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
         # as per clarification, this does not need to be reset
@@ -45,12 +44,16 @@ class Client:
     def loop(self):
         """Main loop for the client"""
 
-        def opDownload():
+        def opDownload() -> None:
             # Download File
             try:
+                # standard block size
                 blksize = 512
+
+                # prompt filename
                 filename = tftp_misc.getInput("Enter filename to retrieve: ")
 
+                # append options
                 options = tftp_packets.appendOptions("RRQ")
 
                 self.sendRequest("RRQ", filename, options)
@@ -58,11 +61,15 @@ class Client:
                 ackInit = None
 
                 # await OACK, skip if no options because
-                # regular TFTP will immediately send DATA
+                # regular unoptioned TFTP will immediately send DATA
                 if len(options) > 0:
                     ackInit = self.awaitAck()
 
+                    if ackInit == None:
+                        return
+
                     if ackInit["opcode"] == 5:
+                        tftp_packets.printError(ackInit)
                         print("File cannot be retrieved")
                         return
 
@@ -89,7 +96,7 @@ class Client:
                 # file cannot be retrieved
                 pass
 
-        def opUpload():
+        def opUpload() -> None:
 
             # Send File
             try:
@@ -107,7 +114,7 @@ class Client:
                     "Enter filename to be used on server [Enter to default]: "
                 )
                 # Defaults to filename on client if no server filename is specified
-                if not filenameServer or filenameServer != "":
+                if not filenameServer or filenameServer == "":
                     filenameServer = filename
 
                 # append options
@@ -117,6 +124,9 @@ class Client:
                 self.sendRequest("WRQ", filenameServer, options)
                 # await request
                 ackInit = self.awaitAck()
+
+                if ackInit == None:
+                    return
 
                 # no additional behavior for opcode 4
 
@@ -138,6 +148,7 @@ class Client:
                     print(e)
                     return
 
+
                 self.sendFile(ackInit["transferPort"], fileContent, blksize)
 
             except FileNotFoundError:
@@ -145,17 +156,19 @@ class Client:
             except:
                 pass
 
-        def opChangeDest():
+        def opChangeDest() -> None:
             """Allows client to change destination server IP address after startup"""
             if hasattr(self, "sock"):
                 self.sock.close()
 
             self.destIP = self.setDestination()
-            self.setSocket()
 
         while True:
-            print("============ TFTPv2 Client ============")
-            print(f"Set Destination IP: {self.destIP}\n")
+            print("=============== TFTPv2 Client ===============")
+            print(
+                f"Client IP Addr:       {socket.gethostbyname(socket.gethostname())}:{self.clientPort}\n"
+                + f"Destination IP Addr.: {self.destIP}\n"
+            )
             userInput = int(
                 tftp_misc.getInput(
                     f"What would you like to do",
@@ -176,17 +189,22 @@ class Client:
 
     def setDestination(self):
         """Set destination IPv4 address with checks for valid IP address"""
-        # TODO: add support for IPv6
 
         while True:
             localIP = tftp_misc.getInput("Enter destination IP address: ")
-            # Check if IP is valid
+
+            # resolve localhost to loopback
             if localIP == "localhost":
-                return localIP
+                return "127.0.0.1"
+
             octets = localIP.split(".")
+
+            # check if there is a valid number of octets
             if len(localIP.split(".")) != 4:
                 print("Invalid IP")
                 continue
+
+            # check each octet if correct
             for octet in octets:
                 if not octet.isdigit() or int(octet) < 0 or int(octet) > 255:
                     print("Invalid IP")
@@ -197,6 +215,7 @@ class Client:
         """Selects an open port for datas"""
         # see RFC 6335 for dynamic port range
         # tl;dr: ports in this range are not to be reserved at IANA
+        # so we'll use this port for transfer port
         portMin, portMax = 49152, 65565
 
         while True:
@@ -238,7 +257,7 @@ class Client:
 
         self.sock.sendto(packet, (self.destIP, self.destReqPort))
 
-    def awaitAck(self):
+    def awaitAck(self) -> dict | None:
         try:
             # listen for packet
             self.sock.settimeout(5)
@@ -248,8 +267,14 @@ class Client:
             dataParsed["transferPort"] = server[1]
 
             return dataParsed
+        except ConnectionResetError:
+            print("Server connection lost, ensure TFTP server is active")
+            return None
+        except socket.timeout:
+            print("Connection timed out, ensure TFTP server is active")
+            return None
         except Exception as err:
-            print("[212]: ", err)
+            print(f"[212 {type(err).__name__}]: ", err)
 
     def sendAck(self, blockNumber: int, transferPort: int):
         """Sends an acknowledgment to the server"""
@@ -346,7 +371,7 @@ class Client:
                     tftp_packets.printError(data)
                     return None
 
-            except TimeoutError:
+            except socket.timeout:
                 # Retransmit ACK if no subsequent DATA packet is received, otherwise break
                 if data and data["opcode"] == 3 and numTimeouts < 5:
                     self.sendAck(data["block"], transferPort)
@@ -355,10 +380,10 @@ class Client:
                     return None
                 pass
             except ConnectionResetError:
-                print("Server connection lost, check if tftp server running")
+                print("Server connection lost, ensure TFTP server is active")
                 break
-            except Exception as err:
-                print(f"[272 {type(err).__name__}]: {err}")
+            except Exception:
+                # something went wrong
                 break
 
         if len(uniquePackets) == 0:
@@ -404,8 +429,6 @@ class Client:
                 # 512 cuz why not lol
                 data, server = self.sock.recvfrom(512)
                 transferPort = server[1]
-
-                print(data, server)
 
                 if initialTransferPort == None:
                     # Set initial transfer port if first
@@ -461,8 +484,7 @@ class Client:
                         return
 
             except ConnectionResetError:
-                # idk why or how this exception is even possible in UDP but it is
-                print("Server connection lost")
+                print("Server connection lost, ensure TFTP server is active")
                 break
 
             except TimeoutError:
@@ -485,5 +507,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1 and sys.argv[1] == "-local":
         client = Client(host)
+    elif len(sys.argv) > 1 and sys.argv[1] == "-t":
+        client = Client("192.168.254.113")
     else:
         client = Client()
