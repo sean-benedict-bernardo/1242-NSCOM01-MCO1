@@ -11,7 +11,7 @@ Bernardo, Sean Benedict G.
 import tftp_files, tftp_misc, tftp_packets
 
 # Python imports
-import socket, sys, random
+import socket, sys, random, time
 
 # IP, PORT = "127.0.0.1", 69
 
@@ -147,7 +147,6 @@ class Client:
                 except Exception as e:
                     print(e)
                     return
-
 
                 self.sendFile(ackInit["transferPort"], fileContent, blksize)
 
@@ -381,10 +380,10 @@ class Client:
                 pass
             except ConnectionResetError:
                 print("Server connection lost, ensure TFTP server is active")
-                break
+                return None
             except Exception:
                 # something went wrong
-                break
+                return None
 
         if len(uniquePackets) == 0:
             return None
@@ -402,7 +401,7 @@ class Client:
     def sendFile(
         self,
         initialTransferPort: int,
-        filecontent: list[dict[int, bytes]],
+        filecontent: dict[int, bytes],
         transferSize=512,
     ) -> None:
         """Sends split file contents into packets to the server"""
@@ -424,6 +423,9 @@ class Client:
             try:
                 # 1 second time-out
                 self.sock.settimeout(1)
+
+                # Testcase: add delay to account for duplicate packets
+                # time.sleep(1)
 
                 # listen for ACKs and ERRORs
                 # 512 cuz why not lol
@@ -456,9 +458,8 @@ class Client:
                     case 4:
                         # Skip duplicate ACKs
                         if data["block"] in sentBlocks or data["block"] == 0:
-                            print(
-                                f"Duplicate ACK found; Block Num: {data["block"]}"
-                            )  # DEBUG ONLY
+                            print(f"Duplicate ACK found; Block Num: {data["block"]}")
+                            # DEBUG ONLY
                             continue
 
                         # print(f"ACK: Block {data["block"]}")  # DEBUG ONLY
@@ -471,13 +472,13 @@ class Client:
                         if nextBlock in filecontent:
                             sendBlock(nextBlock, filecontent[nextBlock], transferPort)
                         elif (
-                            filecontent[nextBlock - 1]
+                            nextBlock - 1 in filecontent
                             and len(filecontent[nextBlock - 1]) == transferSize
                         ):
-                            # If the last block is exactly 512 bytes, or transferSize, send an empty block to signal the end of the file
+                            # If the last block is exactly transferSize bytes, or transferSize, send an empty block to signal the end of the file
                             sendBlock(nextBlock, b"", transferPort)
                         else:
-                            print("File sent successfully!")
+                            print("File sent successfully!\n")
                             return
                     case 5:
                         tftp_packets.printError(data)
@@ -486,8 +487,7 @@ class Client:
             except ConnectionResetError:
                 print("Server connection lost, ensure TFTP server is active")
                 break
-
-            except TimeoutError:
+            except socket.timeout:
                 # Retransmit block if no ACK is received, otherwise break
                 if data and data["opcode"] != 4 or numTimeouts < 5:
                     print(f"TIMEOUT: Resending block {data["block"] + 1}")
@@ -496,8 +496,7 @@ class Client:
                 else:
                     print("Timed out")
                     break
-            except Exception as e:
-                print(e)
+            except Exception:
                 break
 
 
