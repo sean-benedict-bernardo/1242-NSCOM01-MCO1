@@ -15,6 +15,13 @@ Adler Clarence Strebel
 - Negotiation of block size and transfer size as per RFCs 2347, 2348, and 2349
 - Error handling for timeouts, duplicate ACKs, and file not found errors
 
+## Longer description
+
+The program binds a UDP socket to a dynamic client port, which connects to a specified TFTP server IP address. The RRQ (Read Request) operation supports option negotiation for block and transfer size, handling data by writing the received file to local storage. Similarly, WRQ (Write Request) allows writing to the TFTP server, with the option to specify a different filename. The client selects a transfer port from the dynamic port range (49152–65535), which is not reserved by IANA, ensuring compatibility with standard networking practices. ACK management ensures reliable file transfer by requiring the client to wait for an ACK packet (opcode 4) before sending the next block. Duplicate ACKs are discarded, and if no ACK is received after 1 second, the last sent block is retransmitted up to five times to prevent data loss.
+
+The program includes robust error-handling mechanisms. Timeout handling (e.g., awaitAck) prevents the client from hanging indefinitely by limiting the wait time for responses. A ConnectionResetError detects when the server is unreachable, while a timeout error indicates that the server has stopped responding. The receiveFile function is responsible for processing read requests, receiving 512-byte data blocks, acknowledging packets, and ensuring correct file order and integrity. Meanwhile, the sendFile function transmits files by splitting them into 512-byte chunks and sending them block by block. Additional error handling includes detecting unknown ports (Error Code 5), managing duplicate ACKs, and identifying unexpected server disconnections. These features collectively ensure a reliable and efficient TFTP client.
+
+
 ## Error handling testcases instructions (a.k.a. How to recreate)
 
 1. Timeout: Detect and handle unresponsive servers.
@@ -204,4 +211,4 @@ What would you like to do
 - [RFC 2348](https://tools.ietf.org/html/rfc2348)
 - [RFC 2349](https://tools.ietf.org/html/rfc2349)
 - [Answer to "Python send UDP packet"](https://stackoverflow.com/a/18746406)
-- [Answer to "How to check if a network port is open?"] https://stackoverflow.com/a/19196218
+- [Answer to "How to check if a network port is open?"](https://stackoverflow.com/a/19196218)

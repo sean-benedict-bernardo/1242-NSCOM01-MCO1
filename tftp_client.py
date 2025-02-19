@@ -24,6 +24,8 @@ class Client:
         # above, and sends its initial request to the known TID
         # 69 decimal (105 octal) on the serving host.
         self.destReqPort = 69  # but also nice
+
+        # Create socket to be used for connection
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
         # as per clarification, this does not need to be reset
@@ -266,11 +268,8 @@ class Client:
             dataParsed["transferPort"] = server[1]
 
             return dataParsed
-        except ConnectionResetError:
+        except (ConnectionResetError, socket.timeout):
             print("Server connection lost, ensure TFTP server is active")
-            return None
-        except socket.timeout:
-            print("Connection timed out, ensure TFTP server is active")
             return None
         except Exception as err:
             print(f"[212 {type(err).__name__}]: ", err)
@@ -506,7 +505,5 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1 and sys.argv[1] == "-local":
         client = Client(host)
-    elif len(sys.argv) > 1 and sys.argv[1] == "-t":
-        client = Client("192.168.254.113")
     else:
         client = Client()
