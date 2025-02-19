@@ -9,8 +9,11 @@ def fileExists(filename: str) -> bool:
 def makeFolder() -> None:
     """Creates a directory if it does not exist"""
     if not os.path.exists("client"):
-        print("Creating client folder...")
-        os.makedirs("client")
+        print("Creating client folder...\n")
+        try:
+            os.makedirs("client")
+        except:
+            pass
 
 
 def writeFile(filename: str, content: bytes) -> None:
