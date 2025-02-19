@@ -32,6 +32,10 @@ def readFile(filename: str, numBytes: int = -1) -> bytes | list[dict[str, bytes]
     try:
         file = open(f"client/{filename}", "rb")
 
+        # check if file is empty
+        if os.stat(f"client/{filename}").st_size == 0:
+            return {1: b""}
+
         blockNumber = 1
 
         fileContent = b"" if numBytes == -1 else {}
